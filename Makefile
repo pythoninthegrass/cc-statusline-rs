@@ -1,15 +1,15 @@
-# Makefile for statusline-rs installation
+# Makefile for cc-statusline-rs installation
 
 # Installation directory
 INSTALL_DIR := $(HOME)/.claude
 BINARY_NAME := statusline
-TARGET_PATH := $(INSTALL_DIR)/statusline-rs
+TARGET_PATH := $(INSTALL_DIR)/cc-statusline-rs
 SETTINGS_FILE := $(INSTALL_DIR)/settings.json
 
 # Default target
 .PHONY: install
 install: build
-	@echo "Installing statusline-rs to $(TARGET_PATH)..."
+	@echo "Installing cc-statusline-rs to $(TARGET_PATH)..."
 	@mkdir -p $(INSTALL_DIR)
 	@cp target/release/$(BINARY_NAME) $(TARGET_PATH)
 	@chmod +x $(TARGET_PATH)
@@ -17,11 +17,11 @@ install: build
 	@if [ -f "$(SETTINGS_FILE)" ]; then \
 		python3 -c "import json; \
 		data = json.load(open('$(SETTINGS_FILE)')); \
-		data['statusLine'] = {'type': 'command', 'command': '~/.claude/statusline-rs'}; \
+		data['statusLine'] = {'type': 'command', 'command': '~/.claude/cc-statusline-rs'}; \
 		json.dump(data, open('$(SETTINGS_FILE)', 'w'), indent=2)" && \
 		echo "✓ Updated existing settings.json"; \
 	else \
-		echo '{"statusLine": {"type": "command", "command": "~/.claude/statusline-rs"}}' > "$(SETTINGS_FILE)" && \
+		echo '{"statusLine": {"type": "command", "command": "~/.claude/cc-statusline-rs"}}' > "$(SETTINGS_FILE)" && \
 		echo "✓ Created new settings.json"; \
 	fi
 	@echo "✓ Installation complete!"

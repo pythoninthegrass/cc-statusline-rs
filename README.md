@@ -1,8 +1,16 @@
-# statusline-rs
+# cc-statusline-rs
+
+A statusline for Claude Code.
+
+Idea from https://gist.github.com/steipete/8396e512171d31e934f0013e5651691e.
 
 ![demo](demo.png)
 
 ## Quick Start
+
+### Prerequisites
+
+- Rust (install from [rustup.rs](https://rustup.rs/))
 
 ### Install
 
