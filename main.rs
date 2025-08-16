@@ -30,7 +30,7 @@ fn statusline(short_mode: bool, show_pr_status: bool) -> String {
     let session_id = input.get("session_id")
         .and_then(|s| s.as_str());
     
-    // Build model display with context and duration
+    // Build model display with context percentage
     let model_display = if let Some(model) = model {
         let pct = get_context_pct(transcript_path);
         let pct_num: f32 = pct.parse().unwrap_or(0.0);
@@ -39,14 +39,7 @@ fn statusline(short_mode: bool, show_pr_status: bool) -> String {
         else if pct_num >= 50.0 { "\x1b[33m" }
         else { "\x1b[90m" };
         
-        let duration = get_session_duration(transcript_path);
-        let duration_info = if let Some(duration) = duration {
-            format!(" • \x1b[38;5;245m{}\x1b[0m", duration)
-        } else {
-            String::new()
-        };
-        
-        format!(" \x1b[90m• {}{}% \x1b[90m{}{}", pct_color, pct, model, duration_info)
+        format!(" \x1b[90m• {}{}% \x1b[90m{}", pct_color, pct, model)
     } else {
         String::new()
     };
@@ -117,6 +110,15 @@ fn statusline(short_mode: bool, show_pr_status: bool) -> String {
         String::new()
     };
     
+    // Duration display
+    let duration_display = if let Some(duration) = get_session_duration(transcript_path) {
+        format!(" \x1b[90m• \x1b[38;5;245m{}\x1b[0m", duration)
+    } else {
+        String::new()
+    };
+    
+    
+    
     // Format final output
     let pr_display = if pr_url.is_empty() {
         String::new()
@@ -132,7 +134,7 @@ fn statusline(short_mode: bool, show_pr_status: bool) -> String {
     
     let is_worktree = git_dir.contains("/.git/worktrees/");
     
-    // Format final output - ORDER: path, git, context%+model, summary, PR+status, ID
+    // Format final output - ORDER: path, git, context%+model, summary, PR+status, ID, duration
     if is_worktree {
         let worktree_name = display_dir.trim_end().split('/').last().unwrap_or("");
         let branch_display = if branch == worktree_name {
@@ -140,14 +142,14 @@ fn statusline(short_mode: bool, show_pr_status: bool) -> String {
         } else {
             format!("{}↟", branch)
         };
-        format!("\x1b[36m{}\x1b[0m\x1b[35m[{}{}]\x1b[0m{}{}{}{}{}", 
-                display_dir, branch_display, git_status, model_display, session_summary, pr_display, pr_status_display, session_id_display)
+        format!("\x1b[36m{}\x1b[0m\x1b[35m[{}{}]\x1b[0m{}{}{}{}{}{}", 
+                display_dir, branch_display, git_status, model_display, session_summary, pr_display, pr_status_display, session_id_display, duration_display)
     } else if display_dir.is_empty() {
-        format!("\x1b[32m[{}{}]\x1b[0m{}{}{}{}{}", 
-                branch, git_status, model_display, session_summary, pr_display, pr_status_display, session_id_display)
+        format!("\x1b[32m[{}{}]\x1b[0m{}{}{}{}{}{}", 
+                branch, git_status, model_display, session_summary, pr_display, pr_status_display, session_id_display, duration_display)
     } else {
-        format!("\x1b[36m{}\x1b[0m\x1b[32m[{}{}]\x1b[0m{}{}{}{}{}", 
-                display_dir, branch, git_status, model_display, session_summary, pr_display, pr_status_display, session_id_display)
+        format!("\x1b[36m{}\x1b[0m\x1b[32m[{}{}]\x1b[0m{}{}{}{}{}{}", 
+                display_dir, branch, git_status, model_display, session_summary, pr_display, pr_status_display, session_id_display, duration_display)
     }
 }
 
