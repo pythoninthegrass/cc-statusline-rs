@@ -35,7 +35,7 @@ cargo fmt      # Code formatting
 
 ### Core Components
 
-**main.rs**: Entry point that handles command-line arguments (`--short`, `--skip-pr-status`) and calls the main statusline function.
+**src/main.rs**: Entry point that handles command-line arguments (`--short`, `--skip-pr-status`) and calls the main statusline function.
 
 **statusline() function**: The main orchestrator that:
 
