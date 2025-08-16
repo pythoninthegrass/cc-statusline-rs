@@ -45,6 +45,11 @@ check:
 fmt:
 	@cargo fmt
 
+.PHONY: test
+test: build
+	@echo "Running tests with sample data..."
+	@cargo run < test.json
+
 .PHONY: clean
 clean:
 	@cargo clean
