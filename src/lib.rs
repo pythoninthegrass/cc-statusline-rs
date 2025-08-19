@@ -19,7 +19,6 @@ pub struct ModelPricing {
 pub struct SessionCache {
     pub pr_url: Option<CachedValue>,
     pub pr_status: Option<CachedValue>,
-    pub session_summary: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -169,15 +168,8 @@ pub fn statusline(short_mode: bool, show_pr_status: bool) -> String {
     // Git status
     let git_status = get_git_status(current_dir);
 
-    // Add session summary
-    let session_summary =
-        if let (Some(session_id), Some(transcript_path)) = (session_id, transcript_path) {
-            get_session_summary(transcript_path, session_id, current_dir)
-                .map(|summary| format!("\x1b[38;5;75m{}\x1b[0m", summary))
-                .unwrap_or_default()
-        } else {
-            String::new()
-        };
+    // Remove session summary generation - just use empty string
+    let session_summary = String::new();
 
     // Session ID display
     let session_id_display = if let Some(session_id) = session_id {
@@ -524,7 +516,6 @@ pub fn read_cache(session_id: &str) -> SessionCache {
     SessionCache {
         pr_url: None,
         pr_status: None,
-        session_summary: None,
     }
 }
 
@@ -610,112 +601,6 @@ pub fn parse_timestamp(timestamp: &serde_json::Value) -> Option<i64> {
     }
 }
 
-// Extract first user message from transcript
-pub fn get_first_user_message(transcript_path: &str) -> Option<String> {
-    if !Path::new(transcript_path).exists() {
-        return None;
-    }
-
-    let data = fs::read_to_string(transcript_path).ok()?;
-    let lines: Vec<&str> = data.lines().filter(|l| !l.trim().is_empty()).collect();
-
-    for line in lines {
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
-            if let (Some(role), Some(content)) = (
-                json.get("message")
-                    .and_then(|m| m.get("role"))
-                    .and_then(|r| r.as_str()),
-                json.get("message").and_then(|m| m.get("content")),
-            ) {
-                if role == "user" {
-                    let content_text = if let Some(text) = content.as_str() {
-                        text.trim().to_string()
-                    } else if let Some(array) = content.as_array() {
-                        if let Some(first) = array.first() {
-                            first
-                                .get("text")
-                                .and_then(|t| t.as_str())
-                                .unwrap_or("")
-                                .trim()
-                                .to_string()
-                        } else {
-                            continue;
-                        }
-                    } else {
-                        continue;
-                    };
-
-                    // Skip various non-content messages
-                    if !content_text.is_empty()
-                        && !content_text.starts_with('/')
-                        && !content_text.starts_with("Caveat:")
-                        && !content_text.starts_with("<command-")
-                        && !content_text.starts_with("<local-command-")
-                        && !content_text.contains("(no content)")
-                        && !content_text.contains("DO NOT respond to these messages")
-                        && content_text.len() > 20
-                    {
-                        return Some(content_text);
-                    }
-                }
-            }
-        }
-    }
-
-    None
-}
-
-// Get or generate session summary
-pub fn get_session_summary(
-    transcript_path: &str,
-    session_id: &str,
-    working_dir: &str,
-) -> Option<String> {
-    let mut cache = read_cache(session_id);
-
-    // If cache exists, return it
-    if let Some(summary) = &cache.session_summary {
-        return if summary.is_empty() {
-            None
-        } else {
-            Some(summary.clone())
-        };
-    }
-
-    // Get first message
-    let first_msg = get_first_user_message(transcript_path)?;
-
-    // Mark as processing (empty for now)
-    cache.session_summary = Some(String::new());
-    write_cache(session_id, &cache);
-
-    // Escape message for shell
-    let escaped_message = first_msg
-        .replace("\\", "\\\\")
-        .replace("\"", "\\\"")
-        .replace("$", "\\$")
-        .replace("`", "\\`")
-        .chars()
-        .take(500)
-        .collect::<String>();
-
-    let prompt_for_shell = escaped_message.replace("'", "'\\''");
-    let cache_file = get_cache_path(session_id);
-
-    // Use bash to run claude and update the JSON cache
-    let _ = Command::new("bash")
-        .args(["-c", &format!(
-            "summary=$(claude --model haiku -p 'Write a 3-6 word summary title for the TEXTBLOCK below. Be short and concise. Do not read any files, output the title immediately without any formatting. <TEXTBLOCK>{}</TEXTBLOCK>'); \
-             if [ -f '{}' ]; then \
-                 jq --arg summary \"$summary\" '.session_summary = $summary' '{}' > '{}.tmp' && mv '{}.tmp' '{}'; \
-             fi &",
-            prompt_for_shell, cache_file, cache_file, cache_file, cache_file, cache_file
-        )])
-        .current_dir(working_dir)
-        .spawn();
-
-    None // Will show on next refresh if it succeeds
-}
 
 // Cached PR status lookup
 pub fn calculate_session_cost(transcript_path: Option<&str>, model_id: Option<&str>) -> Option<f64> {
