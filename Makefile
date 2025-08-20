@@ -11,25 +11,23 @@ TARGET_PATH := $(INSTALL_DIR)/cc-statusline-rs
 SETTINGS_FILE := $(INSTALL_DIR)/settings.json
 
 install: build # Build and add the status line to Claude Code
-	@echo "Installing cc-statusline-rs to $(TARGET_PATH)..."
+	@echo "📦 Installing cc-statusline-rs to $(TARGET_PATH)..."
 	@mkdir -p $(INSTALL_DIR)
 	@cp target/release/$(BINARY_NAME) $(TARGET_PATH)
 	@chmod +x $(TARGET_PATH)
-	@echo "Updating settings.json..."
+	@echo "⚙️  Updating settings.json..."
 	@if [ -f "$(SETTINGS_FILE)" ]; then \
 		python3 -c "import json; \
 		data = json.load(open('$(SETTINGS_FILE)')); \
 		data['statusLine'] = {'type': 'command', 'command': '~/.claude/cc-statusline-rs'}; \
 		json.dump(data, open('$(SETTINGS_FILE)', 'w'), indent=2)" && \
-		echo "✓ Updated existing settings.json"; \
+		echo "✅ Updated existing settings.json"; \
 	else \
 		echo '{"statusLine": {"type": "command", "command": "~/.claude/cc-statusline-rs"}}' > "$(SETTINGS_FILE)" && \
-		echo "✓ Created new settings.json"; \
+		echo "✅ Created new settings.json"; \
 	fi
-	@echo "✓ Installation complete!"
 	@echo ""
-	@echo "Next steps:"
-	@echo "1. Restart Claude Code to use the new statusline"
+	@echo "🎉 Installation complete! Your new statusline is ready to use."
 
 build: # Build the release binary
 	@echo "Building release binary..."
