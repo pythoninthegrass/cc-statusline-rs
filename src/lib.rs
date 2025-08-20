@@ -20,6 +20,7 @@ pub struct ModelPricing {
 pub struct SessionCache {
     pub pr_url: Option<CachedValue>,
     pub pr_status: Option<CachedValue>,
+    pub git_info: Option<CachedValue>,  // Cached git branch, dir, status
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -124,9 +125,38 @@ pub fn statusline(short_mode: bool, show_pr_status: bool) -> String {
 
     // Initialize variables that depend on git
     let (branch, git_dir, git_status, pr_url, pr_status, display_dir) = if is_git_repo(current_dir) {
-        // Get git info
-        let branch = exec_git("branch --show-current", current_dir);
-        let git_dir = exec_git("rev-parse --git-dir", current_dir);
+        // Check cache for git info (5 second TTL)
+        let cache_key = format!("git_{}", current_dir);
+        let mut cache = if let Some(session_id) = session_id {
+            read_cache(session_id)
+        } else {
+            SessionCache { pr_url: None, pr_status: None, git_info: None }
+        };
+        
+        let (branch, git_dir, repo_url) = if is_cache_valid(&cache.git_info, 5) {
+            // Use cached git info
+            if let Some(cached) = &cache.git_info {
+                if cached.value.starts_with(&cache_key) {
+                    let parts: Vec<&str> = cached.value.split('|').collect();
+                    if parts.len() >= 4 {
+                        (parts[1].to_string(), parts[2].to_string(), parts[3].to_string())
+                    } else {
+                        // Cache corrupted, fetch fresh
+                        fetch_git_info(current_dir, &cache_key, &mut cache, session_id)
+                    }
+                } else {
+                    // Different directory, fetch fresh
+                    fetch_git_info(current_dir, &cache_key, &mut cache, session_id)
+                }
+            } else {
+                // No cache, fetch fresh
+                fetch_git_info(current_dir, &cache_key, &mut cache, session_id)
+            }
+        } else {
+            // Cache expired, fetch fresh
+            fetch_git_info(current_dir, &cache_key, &mut cache, session_id)
+        };
+        
         let repo_url = exec_git("remote get-url origin", current_dir);
         let repo_name = repo_url
             .split('/')
@@ -447,32 +477,44 @@ pub fn get_pr(branch: &str, working_dir: &str, session_id: &str) -> String {
 pub fn get_git_status(working_dir: &str) -> String {
     let mut result = String::new();
 
-    // Check if repository is dirty (any uncommitted/untracked changes)
-    let status_output = exec_git("status --porcelain", working_dir);
-    if !status_output.is_empty() {
+    // Batch operation 1: Get status and branch tracking info in one call
+    let status_output = exec_git("status --porcelain --branch", working_dir);
+    let lines: Vec<&str> = status_output.lines().collect();
+    
+    // Parse branch tracking info from first line (## branch...origin/branch [ahead N, behind M])
+    if let Some(first_line) = lines.first() {
+        if first_line.starts_with("##") {
+            // Extract ahead/behind counts from branch line
+            if first_line.contains("[ahead ") {
+                if let Some(ahead_str) = first_line.split("[ahead ").nth(1) {
+                    if let Ok(ahead_count) = ahead_str.split(|c| c == ']' || c == ',').next().unwrap_or("").parse::<i32>() {
+                        if ahead_count > 0 {
+                            result.push_str(&format!(" ⇡{}", ahead_count));
+                        }
+                    }
+                }
+            }
+            if first_line.contains("behind ") {
+                if let Some(behind_str) = first_line.split("behind ").nth(1) {
+                    if let Ok(behind_count) = behind_str.split(']').next().unwrap_or("").parse::<i32>() {
+                        if behind_count > 0 {
+                            result.push_str(&format!(" ⇣{}", behind_count));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Check if repository is dirty (skip first line which is branch info)
+    if lines.len() > 1 {
         result.push_str(" *");
     }
 
-    // Check git stash status
+    // Check git stash status (still needs separate call)
     let stash_output = exec_git("stash list", working_dir);
     if !stash_output.is_empty() {
         result.push_str(" ≡");
-    }
-
-    // Check unpulled commits (behind upstream)
-    let behind_output = exec_git("rev-list --count HEAD..@{upstream}", working_dir);
-    if let Ok(behind_count) = behind_output.parse::<i32>() {
-        if behind_count > 0 {
-            result.push_str(&format!(" ⇣{}", behind_count));
-        }
-    }
-
-    // Check unpushed commits (ahead of upstream)
-    let ahead_output = exec_git("rev-list --count @{upstream}..HEAD", working_dir);
-    if let Ok(ahead_count) = ahead_output.parse::<i32>() {
-        if ahead_count > 0 {
-            result.push_str(&format!(" ⇡{}", ahead_count));
-        }
     }
 
     result
@@ -516,6 +558,7 @@ pub fn read_cache(session_id: &str) -> SessionCache {
     SessionCache {
         pr_url: None,
         pr_status: None,
+        git_info: None,
     }
 }
 
@@ -687,6 +730,32 @@ pub fn format_cost(cost: f64) -> String {
     } else {
         format!("${:.2}", cost)
     }
+}
+
+// Helper function to fetch git info and cache it
+fn fetch_git_info(current_dir: &str, cache_key: &str, cache: &mut SessionCache, session_id: Option<&str>) -> (String, String, String) {
+    // Batch git operations: Get multiple values in one call
+    let git_info = exec_git("rev-parse --show-toplevel --git-dir --abbrev-ref HEAD", current_dir);
+    let git_lines: Vec<&str> = git_info.lines().collect();
+    
+    let git_dir = git_lines.get(1).unwrap_or(&"").to_string();
+    let branch = git_lines.get(2).unwrap_or(&"").to_string();
+    let repo_url = exec_git("remote get-url origin", current_dir);
+    
+    // Cache the result
+    if let Some(session_id) = session_id {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_else(|_| std::time::Duration::from_secs(0))
+            .as_secs();
+        cache.git_info = Some(CachedValue {
+            value: format!("{}|{}|{}|{}", cache_key, branch, git_dir, repo_url),
+            timestamp: now,
+        });
+        write_cache(session_id, cache);
+    }
+    
+    (branch, git_dir, repo_url)
 }
 
 pub fn get_pr_status(branch: &str, working_dir: &str, session_id: &str) -> String {
