@@ -118,55 +118,58 @@ pub fn statusline(short_mode: bool, show_pr_status: bool) -> String {
         None => return format!("\x1b[36m~\x1b[0m"),
     };
 
-    // Check if git repo
-    if !is_git_repo(current_dir) {
-        let display_path = current_dir.replace(&home_dir(), "~");
-        return format!("\x1b[36m{}\x1b[0m", display_path);
-    }
+    // Initialize variables that depend on git
+    let (branch, git_dir, git_status, pr_url, pr_status, display_dir) = if is_git_repo(current_dir) {
+        // Get git info
+        let branch = exec_git("branch --show-current", current_dir);
+        let git_dir = exec_git("rev-parse --git-dir", current_dir);
+        let repo_url = exec_git("remote get-url origin", current_dir);
+        let repo_name = repo_url
+            .split('/')
+            .next_back()
+            .unwrap_or("")
+            .strip_suffix(".git")
+            .unwrap_or(&repo_url);
 
-    // Get git info
-    let branch = exec_git("branch --show-current", current_dir);
-    let git_dir = exec_git("rev-parse --git-dir", current_dir);
-    let repo_url = exec_git("remote get-url origin", current_dir);
-    let repo_name = repo_url
-        .split('/')
-        .next_back()
-        .unwrap_or("")
-        .strip_suffix(".git")
-        .unwrap_or(&repo_url);
-
-    // Smart path display logic
-    let pr_url = if let Some(session_id) = session_id {
-        get_pr(&branch, current_dir, session_id)
-    } else {
-        String::new()
-    };
-    let pr_status = if show_pr_status && !pr_url.is_empty() {
-        if let Some(session_id) = session_id {
-            get_pr_status(&branch, current_dir, session_id)
+        // Smart path display logic
+        let pr_url = if let Some(session_id) = session_id {
+            get_pr(&branch, current_dir, session_id)
         } else {
             String::new()
-        }
-    } else {
-        String::new()
-    };
-
-    let home_projects = format!("{}/Projects/{}", home_dir(), repo_name);
-    let display_dir = if short_mode {
-        // In short mode, only hide path if it's the standard project location
-        if current_dir == home_projects {
-            String::new()
+        };
+        let pr_status = if show_pr_status && !pr_url.is_empty() {
+            if let Some(session_id) = session_id {
+                get_pr_status(&branch, current_dir, session_id)
+            } else {
+                String::new()
+            }
         } else {
-            // Always show path if it doesn't match the expected pattern
+            String::new()
+        };
+
+        let home_projects = format!("{}/Projects/{}", home_dir(), repo_name);
+        let display_dir = if short_mode {
+            // In short mode, only hide path if it's the standard project location
+            if current_dir == home_projects {
+                String::new()
+            } else {
+                // Always show path if it doesn't match the expected pattern
+                format!("{} ", current_dir.replace(&home_dir(), "~"))
+            }
+        } else {
+            // Without short mode, always show the path
             format!("{} ", current_dir.replace(&home_dir(), "~"))
-        }
-    } else {
-        // Without short mode, always show the path
-        format!("{} ", current_dir.replace(&home_dir(), "~"))
-    };
+        };
 
-    // Git status
-    let git_status = get_git_status(current_dir);
+        // Git status
+        let git_status = get_git_status(current_dir);
+        
+        (branch, git_dir, git_status, pr_url, pr_status, display_dir)
+    } else {
+        // Non-git directory - just show path
+        let display_dir = format!("{} ", current_dir.replace(&home_dir(), "~"));
+        (String::new(), String::new(), String::new(), String::new(), String::new(), display_dir)
+    };
 
     // Remove session summary generation - just use empty string
     let session_summary = String::new();
@@ -277,26 +280,36 @@ pub fn statusline(short_mode: bool, show_pr_status: bool) -> String {
     };
 
     // Format final output - ORDER: path [branch+status] • PR status • model • context size • summary • session_id • duration • cost
-    if is_worktree {
-        let worktree_name = display_dir.trim_end().split('/').next_back().unwrap_or("");
-        let branch_display = if branch == worktree_name {
-            "↟".to_string()
+    if !branch.is_empty() {
+        // Git repository case
+        let is_worktree = git_dir.contains("/.git/worktrees/");
+        if is_worktree {
+            let worktree_name = display_dir.trim_end().split('/').next_back().unwrap_or("");
+            let branch_display = if branch == worktree_name {
+                "↟".to_string()
+            } else {
+                format!("{}↟", branch)
+            };
+            format!(
+                "\x1b[36m{}\x1b[0m\x1b[35m[{}{}]\x1b[0m{}",
+                display_dir, branch_display, git_status, components_str
+            )
+        } else if display_dir.is_empty() {
+            format!(
+                "\x1b[32m[{}{}]\x1b[0m{}",
+                branch, git_status, components_str
+            )
         } else {
-            format!("{}↟", branch)
-        };
-        format!(
-            "\x1b[36m{}\x1b[0m\x1b[35m[{}{}]\x1b[0m{}",
-            display_dir, branch_display, git_status, components_str
-        )
-    } else if display_dir.is_empty() {
-        format!(
-            "\x1b[32m[{}{}]\x1b[0m{}",
-            branch, git_status, components_str
-        )
+            format!(
+                "\x1b[36m{}\x1b[0m\x1b[32m[{}{}]\x1b[0m{}",
+                display_dir, branch, git_status, components_str
+            )
+        }
     } else {
+        // Non-git directory case - just show path with components
         format!(
-            "\x1b[36m{}\x1b[0m\x1b[32m[{}{}]\x1b[0m{}",
-            display_dir, branch, git_status, components_str
+            "\x1b[36m{}\x1b[0m{}",
+            display_dir.trim_end(), components_str
         )
     }
 }
