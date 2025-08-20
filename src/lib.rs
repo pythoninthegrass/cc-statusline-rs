@@ -231,8 +231,6 @@ pub fn statusline(short_mode: bool, show_pr_status: bool) -> String {
         String::new()
     };
 
-    let is_worktree = git_dir.contains("/.git/worktrees/");
-
     // Build the components list
     let mut components = Vec::new();
 
