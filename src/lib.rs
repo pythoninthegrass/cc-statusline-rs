@@ -5,7 +5,6 @@ use std::fs;
 use std::io::{self, Read};
 use std::path::Path;
 use std::process::Command;
-use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone)]
@@ -30,9 +29,6 @@ pub struct CachedValue {
 }
 
 lazy_static! {
-    // In-memory cache for session data to avoid file I/O
-    static ref CACHE_STORE: Mutex<HashMap<String, SessionCache>> = Mutex::new(HashMap::new());
-    
     pub static ref MODEL_PRICING: HashMap<String, ModelPricing> = {
         let mut m = HashMap::new();
 
@@ -133,7 +129,7 @@ pub fn statusline(short_mode: bool, show_pr_status: bool) -> String {
             SessionCache { pr_url: None, pr_status: None, git_info: None }
         };
         
-        let (branch, git_dir, repo_url) = if is_cache_valid(&cache.git_info, 5) {
+        let (branch, git_dir, _repo_url) = if is_cache_valid(&cache.git_info, 5) {
             // Use cached git info
             if let Some(cached) = &cache.git_info {
                 if cached.value.starts_with(&cache_key) {
@@ -548,11 +544,16 @@ pub fn home_dir() -> String {
     std::env::var("HOME").unwrap_or_else(|_| "/".to_string())
 }
 
-// Cache helper functions using in-memory storage
+// Cache helper functions
+pub fn get_cache_path(session_id: &str) -> String {
+    format!("/tmp/{}.json", session_id)
+}
+
 pub fn read_cache(session_id: &str) -> SessionCache {
-    if let Ok(cache_store) = CACHE_STORE.lock() {
-        if let Some(cache) = cache_store.get(session_id) {
-            return cache.clone();
+    let cache_path = get_cache_path(session_id);
+    if let Ok(content) = fs::read_to_string(&cache_path) {
+        if let Ok(cache) = serde_json::from_str::<SessionCache>(&content) {
+            return cache;
         }
     }
     SessionCache {
@@ -563,8 +564,9 @@ pub fn read_cache(session_id: &str) -> SessionCache {
 }
 
 pub fn write_cache(session_id: &str, cache: &SessionCache) {
-    if let Ok(mut cache_store) = CACHE_STORE.lock() {
-        cache_store.insert(session_id.to_string(), cache.clone());
+    let cache_path = get_cache_path(session_id);
+    if let Ok(json) = serde_json::to_string_pretty(cache) {
+        let _ = fs::write(&cache_path, json);
     }
 }
 
@@ -572,7 +574,7 @@ pub fn is_cache_valid(cached_value: &Option<CachedValue>, ttl_seconds: u64) -> b
     if let Some(cached) = cached_value {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap_or_else(|_| std::time::Duration::from_secs(0))
+            .unwrap()
             .as_secs();
         return now - cached.timestamp < ttl_seconds;
     }
@@ -746,7 +748,7 @@ fn fetch_git_info(current_dir: &str, cache_key: &str, cache: &mut SessionCache, 
     if let Some(session_id) = session_id {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap_or_else(|_| std::time::Duration::from_secs(0))
+            .unwrap()
             .as_secs();
         cache.git_info = Some(CachedValue {
             value: format!("{}|{}|{}|{}", cache_key, branch, git_dir, repo_url),
