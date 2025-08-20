@@ -1,19 +1,9 @@
-use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fs;
 use std::io::{self, Read};
 use std::path::Path;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
-
-#[derive(Debug, Clone)]
-pub struct ModelPricing {
-    pub input_cost_per_token: f64,
-    pub output_cost_per_token: f64,
-    pub cache_creation_input_token_cost: Option<f64>,
-    pub cache_read_input_token_cost: Option<f64>,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionCache {
@@ -26,46 +16,6 @@ pub struct SessionCache {
 pub struct CachedValue {
     pub value: String,
     pub timestamp: u64,
-}
-
-lazy_static! {
-    pub static ref MODEL_PRICING: HashMap<String, ModelPricing> = {
-        let mut m = HashMap::new();
-
-        // Claude 4 Opus pricing
-        m.insert("claude-opus-4-1-20250805".to_string(), ModelPricing {
-            input_cost_per_token: 15.0 / 1_000_000.0,
-            output_cost_per_token: 75.0 / 1_000_000.0,
-            cache_creation_input_token_cost: Some(18.75 / 1_000_000.0),
-            cache_read_input_token_cost: Some(1.875 / 1_000_000.0),
-        });
-
-        // Claude 4 Sonnet pricing
-        m.insert("claude-sonnet-4-20250514".to_string(), ModelPricing {
-            input_cost_per_token: 3.0 / 1_000_000.0,
-            output_cost_per_token: 15.0 / 1_000_000.0,
-            cache_creation_input_token_cost: Some(3.75 / 1_000_000.0),
-            cache_read_input_token_cost: Some(0.30 / 1_000_000.0),
-        });
-
-        // Claude 4.1 Sonnet pricing
-        m.insert("claude-sonnet-4-1-20250905".to_string(), ModelPricing {
-            input_cost_per_token: 3.0 / 1_000_000.0,
-            output_cost_per_token: 15.0 / 1_000_000.0,
-            cache_creation_input_token_cost: Some(3.75 / 1_000_000.0),
-            cache_read_input_token_cost: Some(0.30 / 1_000_000.0),
-        });
-
-        // Claude 3.5 Haiku pricing
-        m.insert("claude-haiku-3-5-20241022".to_string(), ModelPricing {
-            input_cost_per_token: 1.0 / 1_000_000.0,
-            output_cost_per_token: 5.0 / 1_000_000.0,
-            cache_creation_input_token_cost: Some(1.25 / 1_000_000.0),
-            cache_read_input_token_cost: Some(0.10 / 1_000_000.0),
-        });
-
-        m
-    };
 }
 
 pub fn statusline(short_mode: bool, show_pr_status: bool) -> String {
@@ -81,10 +31,6 @@ pub fn statusline(short_mode: bool, show_pr_status: bool) -> String {
         .and_then(|m| m.get("display_name"))
         .and_then(|d| d.as_str());
 
-    let model_id = input
-        .get("model")
-        .and_then(|m| m.get("id"))
-        .and_then(|d| d.as_str());
 
     let transcript_path = input.get("transcript_path").and_then(|t| t.as_str());
 
@@ -212,23 +158,36 @@ pub fn statusline(short_mode: bool, show_pr_status: bool) -> String {
         String::new()
     };
 
-    // Cost display
-    let cost_display = if let Some(cost) = calculate_session_cost(transcript_path, model_id) {
-        let formatted_cost = format_cost(cost);
-        // Color based on cost ranges
-        let cost_color = if cost < 0.10 {
-            "\x1b[32m"
+    // Lines changed display from input JSON
+    let lines_display = if let Some(cost_obj) = input.get("cost") {
+        let lines_added = cost_obj.get("total_lines_added").and_then(|l| l.as_u64()).unwrap_or(0);
+        let lines_removed = cost_obj.get("total_lines_removed").and_then(|l| l.as_u64()).unwrap_or(0);
+        
+        if lines_added > 0 || lines_removed > 0 {
+            format!("\x1b[32m+{}\x1b[0m \x1b[31m-{}\x1b[0m", lines_added, lines_removed)
+        } else {
+            String::new()
         }
-        // Green for < $0.10
-        else if cost < 1.0 {
-            "\x1b[33m"
-        }
-        // Yellow for < $1.00
-        else {
-            "\x1b[31m"
-        }; // Red for >= $1.00
+    } else {
+        String::new()
+    };
 
-        format!("{}{}\x1b[0m", cost_color, formatted_cost)
+    // Cost display from input JSON
+    let cost_display = if let Some(cost_obj) = input.get("cost") {
+        if let Some(total_cost) = cost_obj.get("total_cost_usd").and_then(|c| c.as_f64()) {
+            let formatted_cost = format_cost(total_cost);
+            // Color based on cost ranges
+            let cost_color = if total_cost < 5.0 {
+                "\x1b[32m"  // Green for < $5.00
+            } else if total_cost < 20.0 {
+                "\x1b[33m"  // Yellow for < $20.00
+            } else {
+                "\x1b[31m"  // Red for >= $20.00
+            };
+            format!("{}{}\x1b[0m", cost_color, formatted_cost)
+        } else {
+            String::new()
+        }
     } else {
         String::new()
     };
@@ -278,9 +237,13 @@ pub fn statusline(short_mode: bool, show_pr_status: bool) -> String {
         components.push(session_summary.clone());
     }
 
-    // Always add duration and cost if available
+    // Always add duration, lines changed, and cost if available
     if !duration_display.is_empty() {
         components.push(duration_display.clone());
+    }
+
+    if !lines_display.is_empty() {
+        components.push(lines_display.clone());
     }
 
     if !cost_display.is_empty() {
@@ -645,86 +608,6 @@ pub fn parse_timestamp(timestamp: &serde_json::Value) -> Option<i64> {
     }
 }
 
-
-// Cached PR status lookup
-pub fn calculate_session_cost(transcript_path: Option<&str>, model_id: Option<&str>) -> Option<f64> {
-    let transcript_path = transcript_path?;
-    let model_id = model_id?;
-
-    // Get pricing for the model
-    let pricing = MODEL_PRICING.get(model_id)?;
-
-    // Read and parse the transcript
-    let data = fs::read_to_string(transcript_path).ok()?;
-
-    let mut total_cost = 0.0;
-
-    // Process each line in the transcript
-    for line in data.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
-            // Handle two formats:
-            // 1. Full format with message.role and message.usage
-            // 2. Simplified format with type and message.usage
-            let is_assistant = json
-                .get("message")
-                .and_then(|m| m.get("role"))
-                .and_then(|r| r.as_str())
-                .map(|r| r == "assistant")
-                .unwrap_or_else(|| {
-                    json.get("type")
-                        .and_then(|t| t.as_str())
-                        .map(|t| t == "assistant")
-                        .unwrap_or(false)
-                });
-
-            if is_assistant {
-                if let Some(usage) = json.get("message").and_then(|m| m.get("usage")) {
-                    let input_tokens = usage
-                        .get("input_tokens")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0) as f64;
-                    let output_tokens = usage
-                        .get("output_tokens")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0) as f64;
-                    let cache_creation = usage
-                        .get("cache_creation_input_tokens")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0) as f64;
-                    let cache_read = usage
-                        .get("cache_read_input_tokens")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0) as f64;
-
-                    // Calculate cost for this message
-                    let mut message_cost = 0.0;
-                    message_cost += input_tokens * pricing.input_cost_per_token;
-                    message_cost += output_tokens * pricing.output_cost_per_token;
-
-                    if let Some(cache_creation_cost) = pricing.cache_creation_input_token_cost {
-                        message_cost += cache_creation * cache_creation_cost;
-                    }
-
-                    if let Some(cache_read_cost) = pricing.cache_read_input_token_cost {
-                        message_cost += cache_read * cache_read_cost;
-                    }
-
-                    total_cost += message_cost;
-                }
-            }
-        }
-    }
-
-    if total_cost > 0.0 {
-        Some(total_cost)
-    } else {
-        None
-    }
-}
 
 pub fn format_cost(cost: f64) -> String {
     if cost < 0.01 {
