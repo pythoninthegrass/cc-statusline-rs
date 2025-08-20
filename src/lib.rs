@@ -610,11 +610,11 @@ pub fn parse_timestamp(timestamp: &serde_json::Value) -> Option<i64> {
 
 
 pub fn format_cost(cost: f64) -> String {
-    if cost < 0.01 {
-        format!("${:.3}", cost)
-    } else {
-        format!("${:.2}", cost)
-    }
+    // Calculate trees burnt: rough estimate that $1 = 0.001 trees worth of CO2
+    let trees = cost * 0.001;
+    
+    // Always use 2 decimal places for both cost and trees
+    format!("🌳{:.2}🔥", trees)
 }
 
 // Helper function to fetch git info and cache it
