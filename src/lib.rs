@@ -91,7 +91,7 @@ pub fn statusline(short_mode: bool, show_pr_status: bool) -> String {
 
     // Build model display
     let model_display = if let Some(model) = model {
-        format!("\x1b[90m{}", model)
+        format!("\x1b[38;5;208m{}", model)
     } else {
         String::new()
     };
@@ -744,7 +744,7 @@ pub fn get_pr_status(branch: &str, working_dir: &str, session_id: &str) -> Strin
                         } else {
                             String::new()
                         };
-                        status.push_str(&format!("\\x1b[31m✗{}:{}{}\\x1b[0m ", count, names, more));
+                        status.push_str(&format!("\x1b[31m✗{}:{}{}\x1b[0m ", count, names, more));
                     }
 
                     if let Some(pending) = groups.get("pending") {
@@ -760,11 +760,11 @@ pub fn get_pr_status(branch: &str, working_dir: &str, session_id: &str) -> Strin
                         } else {
                             String::new()
                         };
-                        status.push_str(&format!("\\x1b[33m○{}:{}{}\\x1b[0m ", count, names, more));
+                        status.push_str(&format!("\x1b[33m○{}:{}{}\x1b[0m ", count, names, more));
                     }
 
                     if let Some(pass) = groups.get("pass") {
-                        status.push_str(&format!("\\x1b[32m✓{}\\x1b[0m", pass.len()));
+                        status.push_str(&format!("\x1b[32m✓{}\x1b[0m", pass.len()));
                     }
                 }
             }
