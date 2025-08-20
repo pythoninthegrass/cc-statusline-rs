@@ -5,6 +5,7 @@ use std::fs;
 use std::io::{self, Read};
 use std::path::Path;
 use std::process::Command;
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone)]
@@ -28,6 +29,9 @@ pub struct CachedValue {
 }
 
 lazy_static! {
+    // In-memory cache for session data to avoid file I/O
+    static ref CACHE_STORE: Mutex<HashMap<String, SessionCache>> = Mutex::new(HashMap::new());
+    
     pub static ref MODEL_PRICING: HashMap<String, ModelPricing> = {
         let mut m = HashMap::new();
 
@@ -429,7 +433,7 @@ pub fn get_pr(branch: &str, working_dir: &str, session_id: &str) -> String {
     // Cache the result
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_else(|_| std::time::Duration::from_secs(0))
         .as_secs();
     cache.pr_url = Some(CachedValue {
         value: format!("{}|{}", cache_key, url),
@@ -502,16 +506,11 @@ pub fn home_dir() -> String {
     std::env::var("HOME").unwrap_or_else(|_| "/".to_string())
 }
 
-// Cache helper functions
-pub fn get_cache_path(session_id: &str) -> String {
-    format!("/tmp/{}.json", session_id)
-}
-
+// Cache helper functions using in-memory storage
 pub fn read_cache(session_id: &str) -> SessionCache {
-    let cache_path = get_cache_path(session_id);
-    if let Ok(content) = fs::read_to_string(&cache_path) {
-        if let Ok(cache) = serde_json::from_str::<SessionCache>(&content) {
-            return cache;
+    if let Ok(cache_store) = CACHE_STORE.lock() {
+        if let Some(cache) = cache_store.get(session_id) {
+            return cache.clone();
         }
     }
     SessionCache {
@@ -521,9 +520,8 @@ pub fn read_cache(session_id: &str) -> SessionCache {
 }
 
 pub fn write_cache(session_id: &str, cache: &SessionCache) {
-    let cache_path = get_cache_path(session_id);
-    if let Ok(json) = serde_json::to_string_pretty(cache) {
-        let _ = fs::write(&cache_path, json);
+    if let Ok(mut cache_store) = CACHE_STORE.lock() {
+        cache_store.insert(session_id.to_string(), cache.clone());
     }
 }
 
@@ -531,7 +529,7 @@ pub fn is_cache_valid(cached_value: &Option<CachedValue>, ttl_seconds: u64) -> b
     if let Some(cached) = cached_value {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_else(|_| std::time::Duration::from_secs(0))
             .as_secs();
         return now - cached.timestamp < ttl_seconds;
     }
@@ -774,7 +772,7 @@ pub fn get_pr_status(branch: &str, working_dir: &str, session_id: &str) -> Strin
     // Cache the result
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_else(|_| std::time::Duration::from_secs(0))
         .as_secs();
     cache.pr_status = Some(CachedValue {
         value: format!("{}|{}", cache_key, status.trim()),
