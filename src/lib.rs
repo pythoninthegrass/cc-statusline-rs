@@ -174,12 +174,6 @@ pub fn statusline(short_mode: bool, show_pr_status: bool) -> String {
     // Remove session summary generation - just use empty string
     let session_summary = String::new();
 
-    // Session ID display
-    let session_id_display = if let Some(session_id) = session_id {
-        format!("{}\x1b[0m", session_id)
-    } else {
-        String::new()
-    };
 
     // Duration display
     let duration_display = if let Some(duration) = get_session_duration(transcript_path) {
@@ -254,11 +248,7 @@ pub fn statusline(short_mode: bool, show_pr_status: bool) -> String {
         components.push(session_summary.clone());
     }
 
-    // Always add session ID, duration, and cost if available
-    if !session_id_display.is_empty() {
-        components.push(session_id_display.clone());
-    }
-
+    // Always add duration and cost if available
     if !duration_display.is_empty() {
         components.push(duration_display.clone());
     }
@@ -277,7 +267,7 @@ pub fn statusline(short_mode: bool, show_pr_status: bool) -> String {
         )
     };
 
-    // Format final output - ORDER: path [branch+status] • PR status • model • context size • summary • session_id • duration • cost
+    // Format final output - ORDER: path [branch+status] • PR status • model • context size • summary • duration • cost
     if !branch.is_empty() {
         // Git repository case
         let is_worktree = git_dir.contains("/.git/worktrees/");
