@@ -18,6 +18,11 @@ pub fn statusline(short_mode: bool, _show_pr_status: bool) -> String {
 
     let transcript_path = input.get("transcript_path").and_then(|t| t.as_str());
 
+    let output_style = input
+        .get("output_style")
+        .and_then(|o| o.get("name"))
+        .and_then(|n| n.as_str());
+
     // Build model display
     let model_display = if let Some(model) = model {
         format!("\x1b[38;5;208m{}", model)
@@ -55,18 +60,11 @@ pub fn statusline(short_mode: bool, _show_pr_status: bool) -> String {
     };
 
     // Smart path display logic
-    let display_dir = if short_mode && !branch.is_empty() {
-        // In short mode with git, try to hide standard project locations
-        let repo_name = current_dir.split('/').last().unwrap_or("");
-        let home_projects = format!("{}/Projects/{}", home_dir(), repo_name);
-        
-        if current_dir == home_projects {
-            String::new()
-        } else {
-            format!("{} ", current_dir.replace(&home_dir(), "~"))
-        }
+    let display_dir = if short_mode {
+        // Fish-style path shortening
+        format!("{} ", fish_shorten_path(current_dir))
     } else {
-        // Without short mode or not in git, always show the path
+        // Full path with ~ for home
         format!("{} ", current_dir.replace(&home_dir(), "~"))
     };
 
@@ -147,25 +145,34 @@ pub fn statusline(short_mode: bool, _show_pr_status: bool) -> String {
         )
     };
 
+    // Build output style display (no trailing space, handled in format)
+    let style_display = match output_style {
+        Some(style) if style != "default" => format!("\x1b[90m({})\x1b[0m", style),
+        _ => String::new(),
+    };
+
+    // Add space separator if style_display is present
+    let style_sep = if style_display.is_empty() { "" } else { " " };
+
     // Format final output
     if !branch.is_empty() {
         // Git repository case - show branch
         if display_dir.is_empty() {
             format!(
-                "\x1b[32m[{}]\x1b[0m{}",
-                branch, components_str
+                "{}{}\x1b[32m[{}]\x1b[0m{}",
+                style_display, style_sep, branch, components_str
             )
         } else {
             format!(
-                "\x1b[36m{}\x1b[0m\x1b[32m[{}]\x1b[0m{}",
-                display_dir, branch, components_str
+                "\x1b[36m{}\x1b[0m{}{}\x1b[32m[{}]\x1b[0m{}",
+                display_dir.trim_end(), style_sep, style_display, branch, components_str
             )
         }
     } else {
         // Non-git directory case - just show path with components
         format!(
-            "\x1b[36m{}\x1b[0m{}",
-            display_dir.trim_end(), components_str
+            "\x1b[36m{}\x1b[0m{}{}{}",
+            display_dir.trim_end(), style_sep, style_display, components_str
         )
     }
 }
@@ -357,4 +364,30 @@ pub fn format_cost(cost: f64) -> String {
     } else {
         format!("${:.2}", cost)
     }
+}
+
+/// Fish-style path shortening: abbreviate each component to first char except last
+/// e.g. ~/Developer/code/project -> ~/D/c/project
+pub fn fish_shorten_path(path: &str) -> String {
+    let home = home_dir();
+    let path = path.replace(&home, "~");
+
+    let parts: Vec<&str> = path.split('/').collect();
+    if parts.len() <= 1 {
+        return path;
+    }
+
+    let shortened: Vec<String> = parts
+        .iter()
+        .enumerate()
+        .map(|(i, part)| {
+            if i == parts.len() - 1 || part.is_empty() || *part == "~" {
+                part.to_string()
+            } else {
+                part.chars().next().map(|c| c.to_string()).unwrap_or_default()
+            }
+        })
+        .collect();
+
+    shortened.join("/")
 }
