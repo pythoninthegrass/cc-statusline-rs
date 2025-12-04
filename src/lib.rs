@@ -147,7 +147,7 @@ pub fn statusline(short_mode: bool, _show_pr_status: bool) -> String {
 
     // Build output style display (no trailing space, handled in format)
     let style_display = match output_style {
-        Some(style) if style != "default" => format!("\x1b[90m({})\x1b[0m", style),
+        Some(style) => format!("\x1b[90m({})\x1b[0m", style),
         _ => String::new(),
     };
 
