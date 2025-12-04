@@ -109,8 +109,19 @@ pub fn statusline(short_mode: bool, _show_pr_status: bool) -> String {
         String::new()
     };
 
+    // Build output style display
+    let style_display = match output_style {
+        Some(style) => format!("\x1b[90m{}\x1b[0m", style),
+        _ => String::new(),
+    };
+
     // Build the components list
     let mut components = Vec::new();
+
+    // Always add output style first
+    if !style_display.is_empty() {
+        components.push(style_display);
+    }
 
     // Always add model display
     if !model_display.is_empty() {
@@ -145,34 +156,25 @@ pub fn statusline(short_mode: bool, _show_pr_status: bool) -> String {
         )
     };
 
-    // Build output style display (no trailing space, handled in format)
-    let style_display = match output_style {
-        Some(style) => format!("\x1b[90m({})\x1b[0m", style),
-        _ => String::new(),
-    };
-
-    // Add space separator if style_display is present
-    let style_sep = if style_display.is_empty() { "" } else { " " };
-
     // Format final output
     if !branch.is_empty() {
         // Git repository case - show branch
         if display_dir.is_empty() {
             format!(
-                "{}{}\x1b[32m[{}]\x1b[0m{}",
-                style_display, style_sep, branch, components_str
+                "\x1b[32m[{}]\x1b[0m{}",
+                branch, components_str
             )
         } else {
             format!(
-                "\x1b[36m{}\x1b[0m{}{}\x1b[32m[{}]\x1b[0m{}",
-                display_dir.trim_end(), style_sep, style_display, branch, components_str
+                "\x1b[36m{}\x1b[0m \x1b[32m[{}]\x1b[0m{}",
+                display_dir.trim_end(), branch, components_str
             )
         }
     } else {
         // Non-git directory case - just show path with components
         format!(
-            "\x1b[36m{}\x1b[0m{}{}{}",
-            display_dir.trim_end(), style_sep, style_display, components_str
+            "\x1b[36m{}\x1b[0m{}",
+            display_dir.trim_end(), components_str
         )
     }
 }
