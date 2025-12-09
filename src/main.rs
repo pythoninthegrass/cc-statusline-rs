@@ -7,4 +7,3 @@ fn main() {
 
     print!("{}", statusline(show_pr_status));
 }
-
