@@ -3,7 +3,7 @@ use std::io::{self, Read};
 use std::path::Path;
 use std::process::Command;
 
-pub fn statusline(short_mode: bool, _show_pr_status: bool) -> String {
+pub fn statusline(_show_pr_status: bool) -> String {
     let input = read_input().unwrap_or_default();
 
     let current_dir = input
@@ -63,14 +63,8 @@ pub fn statusline(short_mode: bool, _show_pr_status: bool) -> String {
         String::new()
     };
 
-    // Smart path display logic
-    let display_dir = if short_mode {
-        // Fish-style path shortening
-        format!("{} ", fish_shorten_path(current_dir))
-    } else {
-        // Full path with ~ for home
-        format!("{} ", current_dir.replace(&home_dir(), "~"))
-    };
+    // Fish-style path shortening
+    let display_dir = format!("{} ", fish_shorten_path(current_dir));
 
 
     // Lines changed for branch display
@@ -348,8 +342,11 @@ pub fn format_cost(cost: f64) -> String {
     }
 }
 
-/// Fish-style path shortening: abbreviate each component to first char except last
-/// e.g. ~/Developer/code/project -> ~/D/c/project
+/// Fish-style path shortening similar to `prompt_pwd`
+/// - Abbreviates each directory component except the last
+/// - Hidden directories (starting with `.`) keep the dot + first char (e.g., `.config` -> `.c`)
+/// - `~` is preserved as-is
+/// e.g. ~/Developer/code/.config/project -> ~/D/c/.c/project
 pub fn fish_shorten_path(path: &str) -> String {
     let home = home_dir();
     let path = path.replace(&home, "~");
@@ -363,9 +360,14 @@ pub fn fish_shorten_path(path: &str) -> String {
         .iter()
         .enumerate()
         .map(|(i, part)| {
+            // Keep the last component full, empty parts, and ~
             if i == parts.len() - 1 || part.is_empty() || *part == "~" {
                 part.to_string()
+            } else if part.starts_with('.') && part.len() > 1 {
+                // Hidden directories: keep dot + first char after dot
+                format!(".{}", part.chars().nth(1).unwrap_or_default())
             } else {
+                // Normal directories: just first char
                 part.chars().next().map(|c| c.to_string()).unwrap_or_default()
             }
         })
