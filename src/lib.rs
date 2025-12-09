@@ -23,14 +23,18 @@ pub fn statusline(short_mode: bool, _show_pr_status: bool) -> String {
         .and_then(|o| o.get("name"))
         .and_then(|n| n.as_str());
 
-    // Build model display
+    // Build model display with output style (nerd font icon: )
     let model_display = if let Some(model) = model {
-        format!("\x1b[38;5;208m{}", model)
+        let style_suffix = match output_style {
+            Some(style) => format!(" \x1b[90m({})\x1b[0m", style),
+            None => String::new(),
+        };
+        format!("\x1b[38;5;14m\u{e26d} \x1b[38;5;208m{}{}", model, style_suffix)
     } else {
         String::new()
     };
 
-    // Build context percentage display
+    // Build context percentage display (nerd font icon: )
     let context_display = {
         let pct = get_context_pct(transcript_path);
         let pct_num: f32 = pct.parse().unwrap_or(0.0);
@@ -43,7 +47,7 @@ pub fn statusline(short_mode: bool, _show_pr_status: bool) -> String {
         } else {
             "\x1b[90m"
         };
-        format!("{}{}%\x1b[0m", pct_color, pct)
+        format!("\x1b[38;5;13m\u{f49b} {}{}%\x1b[0m", pct_color, pct)
     };
 
     // Handle non-directory cases
@@ -68,20 +72,14 @@ pub fn statusline(short_mode: bool, _show_pr_status: bool) -> String {
         format!("{} ", current_dir.replace(&home_dir(), "~"))
     };
 
-    // Duration display
-    let duration_display = if let Some(duration) = get_session_duration(transcript_path) {
-        format!("\x1b[38;5;245m{}\x1b[0m", duration)
-    } else {
-        String::new()
-    };
 
-    // Lines changed display from input JSON
-    let lines_display = if let Some(cost_obj) = input.get("cost") {
+    // Lines changed for branch display
+    let lines_changed = if let Some(cost_obj) = input.get("cost") {
         let lines_added = cost_obj.get("total_lines_added").and_then(|l| l.as_u64()).unwrap_or(0);
         let lines_removed = cost_obj.get("total_lines_removed").and_then(|l| l.as_u64()).unwrap_or(0);
-        
+
         if lines_added > 0 || lines_removed > 0 {
-            format!("\x1b[32m+{}\x1b[0m \x1b[31m-{}\x1b[0m", lines_added, lines_removed)
+            format!("(\x1b[32m+{}\x1b[0m \x1b[31m-{}\x1b[0m)", lines_added, lines_removed)
         } else {
             String::new()
         }
@@ -89,7 +87,7 @@ pub fn statusline(short_mode: bool, _show_pr_status: bool) -> String {
         String::new()
     };
 
-    // Cost display from input JSON
+    // Cost display from input JSON (nerd font icon: )
     let cost_display = if let Some(cost_obj) = input.get("cost") {
         if let Some(total_cost) = cost_obj.get("total_cost_usd").and_then(|c| c.as_f64()) {
             let formatted_cost = format_cost(total_cost);
@@ -101,7 +99,7 @@ pub fn statusline(short_mode: bool, _show_pr_status: bool) -> String {
             } else {
                 "\x1b[31m"  // Red for >= $20.00
             };
-            format!("{}{}\x1b[0m", cost_color, formatted_cost)
+            format!("\x1b[38;5;3m\u{f155} {}{}\x1b[0m", cost_color, formatted_cost)
         } else {
             String::new()
         }
@@ -109,19 +107,9 @@ pub fn statusline(short_mode: bool, _show_pr_status: bool) -> String {
         String::new()
     };
 
-    // Build output style display
-    let style_display = match output_style {
-        Some(style) => format!("\x1b[90m{}\x1b[0m", style),
-        _ => String::new(),
-    };
 
     // Build the components list
     let mut components = Vec::new();
-
-    // Always add output style first
-    if !style_display.is_empty() {
-        components.push(style_display);
-    }
 
     // Always add model display
     if !model_display.is_empty() {
@@ -133,15 +121,7 @@ pub fn statusline(short_mode: bool, _show_pr_status: bool) -> String {
         components.push(context_display.clone());
     }
 
-    // Always add duration, lines changed, and cost if available
-    if !duration_display.is_empty() {
-        components.push(duration_display.clone());
-    }
-
-    if !lines_display.is_empty() {
-        components.push(lines_display.clone());
-    }
-
+    // Always add cost if available
     if !cost_display.is_empty() {
         components.push(cost_display.clone());
     }
@@ -156,18 +136,18 @@ pub fn statusline(short_mode: bool, _show_pr_status: bool) -> String {
         )
     };
 
-    // Format final output
+    // Format final output (nerd font icon: 󰊢 for git)
     if !branch.is_empty() {
-        // Git repository case - show branch
+        // Git repository case - show branch with lines changed
         if display_dir.is_empty() {
             format!(
-                "\x1b[32m[{}]\x1b[0m{}",
-                branch, components_str
+                "\x1b[38;5;12m\u{f02a2} \x1b[32m{}{}\x1b[0m{}",
+                branch, lines_changed, components_str
             )
         } else {
             format!(
-                "\x1b[36m{}\x1b[0m \x1b[32m[{}]\x1b[0m{}",
-                display_dir.trim_end(), branch, components_str
+                "\x1b[36m{}\x1b[0m \x1b[38;5;12m\u{f02a2} \x1b[32m{}{}\x1b[0m{}",
+                display_dir.trim_end(), branch, lines_changed, components_str
             )
         }
     } else {
@@ -362,9 +342,9 @@ pub fn parse_timestamp(timestamp: &serde_json::Value) -> Option<i64> {
 
 pub fn format_cost(cost: f64) -> String {
     if cost < 0.01 {
-        format!("${:.3}", cost)
+        format!("{:.3}", cost)
     } else {
-        format!("${:.2}", cost)
+        format!("{:.2}", cost)
     }
 }
 
