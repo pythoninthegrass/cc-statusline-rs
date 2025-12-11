@@ -16,8 +16,6 @@ pub fn statusline(_show_pr_status: bool) -> String {
         .and_then(|m| m.get("display_name"))
         .and_then(|d| d.as_str());
 
-    let transcript_path = input.get("transcript_path").and_then(|t| t.as_str());
-
     let output_style = input
         .get("output_style")
         .and_then(|o| o.get("name"))
@@ -36,19 +34,46 @@ pub fn statusline(_show_pr_status: bool) -> String {
         String::new()
     };
 
-    let context_display = {
-        let pct = get_context_pct(transcript_path);
-        let pct_num: f32 = pct.parse().unwrap_or(0.0);
-        let pct_color = if pct_num >= 90.0 {
+    let context_display = if let Some(ctx) = input.get("context_window") {
+        let input_tokens = ctx
+            .get("total_input_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let output_tokens = ctx
+            .get("total_output_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let window_size = ctx
+            .get("context_window_size")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(200000);
+
+        let used = input_tokens + output_tokens;
+        let pct = if window_size > 0 {
+            ((used as f64 * 100.0) / window_size as f64).min(100.0)
+        } else {
+            0.0
+        };
+
+        let pct_color = if pct >= 90.0 {
             "\x1b[31m"
-        } else if pct_num >= 70.0 {
+        } else if pct >= 70.0 {
             "\x1b[38;5;208m"
-        } else if pct_num >= 50.0 {
+        } else if pct >= 50.0 {
             "\x1b[33m"
         } else {
             "\x1b[90m"
         };
-        format!("\x1b[38;5;13m\u{f49b} {}{}%\x1b[0m", pct_color, pct)
+
+        let pct_str = if pct >= 90.0 {
+            format!("{:.1}", pct)
+        } else {
+            format!("{}", pct.round() as u32)
+        };
+
+        format!("\x1b[38;5;13m\u{f49b} {}{}%\x1b[0m", pct_color, pct_str)
+    } else {
+        String::new()
     };
 
     let current_dir = match current_dir {
@@ -157,88 +182,6 @@ pub fn read_input() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     Ok(serde_json::from_str(&buffer)?)
 }
 
-pub fn get_context_pct(transcript_path: Option<&str>) -> String {
-    let transcript_path = match transcript_path {
-        Some(path) => path,
-        None => return "0".to_string(),
-    };
-
-    let data = match fs::read_to_string(transcript_path) {
-        Ok(data) => data,
-        Err(_) => return "0".to_string(),
-    };
-
-    let lines: Vec<&str> = data.lines().collect();
-    let start = if lines.len() > 50 {
-        lines.len() - 50
-    } else {
-        0
-    };
-
-    let mut latest_usage = None;
-    let mut latest_ts = 0i64;
-
-    for line in &lines[start..] {
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
-            if let (Some(ts), Some(usage), Some(role)) = (
-                json.get("timestamp"),
-                json.get("message").and_then(|m| m.get("usage")),
-                json.get("message")
-                    .and_then(|m| m.get("role"))
-                    .and_then(|r| r.as_str()),
-            ) {
-                if role == "assistant" {
-                    let timestamp = if let Some(ts_str) = ts.as_str() {
-                        chrono::DateTime::parse_from_rfc3339(ts_str)
-                            .map(|dt| dt.timestamp())
-                            .unwrap_or(0)
-                    } else {
-                        ts.as_i64().unwrap_or(0)
-                    };
-
-                    if timestamp > latest_ts {
-                        latest_ts = timestamp;
-                        latest_usage = Some(usage.clone());
-                    }
-                }
-            }
-        }
-    }
-
-    if let Some(usage) = latest_usage {
-        let input_tokens = usage
-            .get("input_tokens")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-        let output_tokens = usage
-            .get("output_tokens")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-        let cache_read = usage
-            .get("cache_read_input_tokens")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-        let cache_creation = usage
-            .get("cache_creation_input_tokens")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-
-        let used = input_tokens + output_tokens + cache_read + cache_creation;
-        let pct = ((used as f32 * 100.0) / 160000.0).min(100.0);
-
-        if pct >= 90.0 {
-            format!("{:.1}", pct)
-        } else {
-            format!("{}", pct.round() as u32)
-        }
-    } else {
-        "0".to_string()
-    }
-}
 
 pub fn get_git_branch(working_dir: &str) -> String {
     let output = Command::new("git")
