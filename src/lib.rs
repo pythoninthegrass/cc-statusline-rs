@@ -79,17 +79,15 @@ pub fn statusline(_show_pr_status: bool) -> String {
             "\x1b[90m"
         };
 
-        let input_k = format_tokens(input_tokens);
-        let output_k = format_tokens(output_tokens);
+        let used_k = format_tokens(used);
         let total_k = format_tokens(window_size);
 
         format!(
-            "\x1b[38;5;13m\u{f49b} {}{}% \x1b[90m({}/{}/{})\x1b[0m",
+            "\x1b[38;5;13m\u{f49b} \x1b[90m({}/{}) {}{}%\x1b[0m",
+            used_k,
+            total_k,
             pct_color,
-            pct.round() as u32,
-            input_k,
-            output_k,
-            total_k
+            pct.round() as u32
         )
     } else {
         String::new()

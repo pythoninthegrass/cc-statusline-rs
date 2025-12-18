@@ -15,6 +15,8 @@ install: build # Build and add the status line to Claude Code
 	@mkdir -p $(INSTALL_DIR)
 	@cp target/release/$(BINARY_NAME) $(TARGET_PATH)
 	@chmod +x $(TARGET_PATH)
+	@xattr -cr $(TARGET_PATH)
+	@codesign -fs - $(TARGET_PATH)
 	@echo "⚙️  Updating settings.json..."
 	@if [ -f "$(SETTINGS_FILE)" ]; then \
 		python3 -c "import json; \
