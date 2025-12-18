@@ -97,7 +97,7 @@ pub fn statusline(_show_pr_status: bool) -> String {
 
     let current_dir = match current_dir {
         Some(dir) => dir,
-        None => return format!("\x1b[36m~\x1b[0m"),
+        None => return format!("\x1b[31m\u{f071} missing workspace.current_dir\x1b[0m"),
     };
 
     let branch = if is_git_repo(current_dir) {
