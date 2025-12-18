@@ -35,18 +35,32 @@ pub fn statusline(_show_pr_status: bool) -> String {
     };
 
     let context_display = if let Some(ctx) = input.get("context_window") {
-        let input_tokens = ctx
-            .get("total_input_tokens")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-        let output_tokens = ctx
-            .get("total_output_tokens")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
         let window_size = ctx
             .get("context_window_size")
             .and_then(|v| v.as_u64())
             .unwrap_or(200000);
+
+        let (input_tokens, output_tokens) = if let Some(current) = ctx.get("current_usage") {
+            let input = current
+                .get("input_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let output = current
+                .get("output_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            (input, output)
+        } else {
+            let input = ctx
+                .get("total_input_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let output = ctx
+                .get("total_output_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            (input, output)
+        };
 
         let used = input_tokens + output_tokens;
         let pct = if window_size > 0 {
@@ -65,13 +79,18 @@ pub fn statusline(_show_pr_status: bool) -> String {
             "\x1b[90m"
         };
 
-        let pct_str = if pct >= 90.0 {
-            format!("{:.1}", pct)
-        } else {
-            format!("{}", pct.round() as u32)
-        };
+        let input_k = format_tokens(input_tokens);
+        let output_k = format_tokens(output_tokens);
+        let total_k = format_tokens(window_size);
 
-        format!("\x1b[38;5;13m\u{f49b} {}{}%\x1b[0m", pct_color, pct_str)
+        format!(
+            "\x1b[38;5;13m\u{f49b} {}{}% \x1b[90m({}/{}/{})\x1b[0m",
+            pct_color,
+            pct.round() as u32,
+            input_k,
+            output_k,
+            total_k
+        )
     } else {
         String::new()
     };
@@ -277,6 +296,17 @@ pub fn format_cost(cost: f64) -> String {
         format!("{:.3}", cost)
     } else {
         format!("{:.2}", cost)
+    }
+}
+
+pub fn format_tokens(tokens: u64) -> String {
+    let k = tokens as f64 / 1000.0;
+    if k >= 100.0 {
+        format!("{}k", k.round() as u64)
+    } else if k >= 10.0 {
+        format!("{:.0}k", k)
+    } else {
+        format!("{:.1}k", k)
     }
 }
 
