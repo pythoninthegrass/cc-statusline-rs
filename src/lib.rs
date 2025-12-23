@@ -40,29 +40,23 @@ pub fn statusline(_show_pr_status: bool) -> String {
             .and_then(|v| v.as_u64())
             .unwrap_or(200000);
 
-        let (input_tokens, output_tokens) = if let Some(current) = ctx.get("current_usage") {
+        let used = if let Some(current) = ctx.get("current_usage") {
             let input = current
                 .get("input_tokens")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(0);
-            let output = current
-                .get("output_tokens")
+            let cache_creation = current
+                .get("cache_creation_input_tokens")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(0);
-            (input, output)
+            let cache_read = current
+                .get("cache_read_input_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            input + cache_creation + cache_read
         } else {
-            let input = ctx
-                .get("total_input_tokens")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
-            let output = ctx
-                .get("total_output_tokens")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
-            (input, output)
+            0
         };
-
-        let used = input_tokens + output_tokens;
         let pct = if window_size > 0 {
             ((used as f64 * 100.0) / window_size as f64).min(100.0)
         } else {
@@ -79,13 +73,14 @@ pub fn statusline(_show_pr_status: bool) -> String {
             "\x1b[90m"
         };
 
-        let used_k = format_tokens(used);
-        let total_k = format_tokens(window_size);
+        let bar_width: usize = 15;
+        let filled = (pct * bar_width as f64 / 100.0).round() as usize;
+        let empty = bar_width.saturating_sub(filled);
+        let bar: String = "█".repeat(filled) + &"░".repeat(empty);
 
         format!(
-            "\x1b[38;5;13m\u{f49b} \x1b[90m({}/{}) {}{}%\x1b[0m",
-            used_k,
-            total_k,
+            "\x1b[38;5;13m\u{f49b} \x1b[90m{}\x1b[0m {}{}%\x1b[0m",
+            bar,
             pct_color,
             pct.round() as u32
         )
